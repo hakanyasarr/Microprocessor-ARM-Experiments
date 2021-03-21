@@ -1,0 +1,270 @@
+			AREA main,READONLY,CODE,ALIGN=2
+			THUMB
+			EXTERN PULSE_INIT	
+			EXPORT __main
+__main 
+
+			BL PULSE_INIT		 			
+begin	    B begin			   
+			ALIGN
+			END	
+      ;***************************************************************
+; Program section					      
+;***************************************************************
+;LABEL		DIRECTIVE	VALUE		COMMENT
+			AREA    	subroutines, READONLY, CODE
+			THUMB
+			EXPORT  	CONVRT	; Make available
+
+CONVRT		PROC
+	
+			push	{R0-R5}
+			LDR     R1,[R3]
+			STR		R1,[R5],#4
+			cbz		r4,zero
+			mov		r2,#10			; Divider for decimal conversion
+			mov 	r1,#1000
+			mov		r0,#1000
+			mul		r0,r0
+			mul		r0,r1			; Set R0 to 10^9
+			mov		r1,#0x30		; Set R1 to 0x30 as an offset for ASCII
+			b		compare_2		; Do not start with dividing R0
+compare_1	udiv	r0,r2			; Divide R0 if number is smaller than it
+compare_2	cmp		r4,r0			
+			blt		compare_1
+compare		cmp		r4,r0
+			bge		count
+			strb	r1,[r5],#1		; Store count as next ASCII character
+			cmp		r4,#0			; End conversion if R4 is less than or equal to 0
+			ble		end_convrt
+			udiv	r0,r2
+			mov		r1,#0x30
+			b		compare
+count		sub		r4,r0
+			add		r1,#1			; Count how many R0 in R4
+			b 		compare
+zero		strb	r4,[r5],#1
+end_convrt	cmp     r0,#10
+			bne     skip
+			mov 	r1,#0x30
+			strb	r1,[r5],#1
+skip		mov     r1,#117
+			strb	r1,[r5],#1
+			mov     r1,#115
+			strb	r1,[r5],#1
+			mov		r1,#0x0D		; End of transmission character
+			strb	r1,[r5],#1
+			mov		r1,#0x04		; End of transmission character
+			strb	r1,[r5],#1
+						
+			pop	{R0-R5}
+			
+			BX		LR
+			ENDP
+
+;***************************************************************
+; End of the program  section
+;***************************************************************
+;LABEL      DIRECTIVE       VALUE                           COMMENT
+			ALIGN
+			END
+;GPIO Registers
+;Port B base 0 x40005000
+SYSCTL_RCGCGPIO  EQU 0x400FE608
+SYSCTL_RCGCTIMER EQU 0x400FE604
+GPIO_PORTB_AFSEL EQU 0x40005420 ; Altfunction enable
+GPIO_PORTB_AMSEL EQU 0x40005528 ; Analog enable
+GPIO_PORTB_PCTL  EQU 0x4000552C ; Choose alternate functions
+GPIO_PORTB_DATA	 EQU 0x40005010 ; Access BIT2
+GPIO_PORTB_DIR 	 EQU 0x40005400 ; Port Direction
+GPIO_PORTB_DEN 	 EQU 0x4000551C ; Digital Enable
+
+TIMER1_CFG		 EQU 0x40031000
+TIMER1_TAMR		 EQU 0x40031004
+TIMER1_CTL		 EQU 0x4003100C
+TIMER1_TAILR	 EQU 0x40031028 ; Timer interval
+TIMER1_TAPR		 EQU 0x40031038
+TIMER1_TAR		 EQU 0x40031048 ; Timer register
+TIMER1_RIS		 EQU 0x4003101C ; Timer Interrupt Status
+TIMER1_ICR		 EQU 0x40031024 ; Timer Interrupt Clear
+TIMER0_CTL		 EQU 0x4003000C
+
+FIRST	  		 EQU 0x20000480
+	
+;LABEL		DIRECTIVE	VALUE		COMMENT
+				AREA        sdata, DATA, READONLY
+				THUMB
+DUTY    		DCB     	"dty=";Names going to be printed before values
+PULSE_WIDTH		DCB			"pwt="
+PERIOD			DCB			"Prd="
+			AREA main,READONLY,CODE,ALIGN=2
+			THUMB
+			EXTERN PULSE_INIT
+			EXTERN OutStr
+			EXTERN CONVRT
+			EXPORT __main
+			
+__main 
+			LDR R1, =SYSCTL_RCGCGPIO ; start GPIO clock
+			LDR R0, [R1]
+			ORR R0, R0, #0x02 ;  port B initilize
+			STR R0, [R1]
+			NOP ; allow clock to settle
+			NOP
+			NOP
+			LDR R1, =GPIO_PORTB_DIR ; set direction of PB4
+			LDR R0, [R1]
+			BIC R0, R0, #0x10 ; set bit 4 for input
+			STR R0, [R1]
+
+			LDR R1, =GPIO_PORTB_DEN ; enable port digital
+			LDR R0, [R1]
+			ORR R0, R0, #0x10
+			STR R0, [R1]
+			; Set bit 4 for alternate function on PB4
+			LDR R1 , =GPIO_PORTB_AFSEL
+			LDR R0 , [R1 ]
+			ORR R0 , R0 , #0x10
+			STR R0 , [R1 ]
+			; Set bits 27:24 of PCTL to 7 to enable TIMER0A on PB4
+			LDR R1 , =GPIO_PORTB_PCTL
+			LDR R0 , [R1 ]
+			ORR R0 , R0 , #0x00070000
+			STR R0 , [R1 ]
+			; clear AMSEL to diable analog
+			LDR R1 , =GPIO_PORTB_AMSEL
+			MOV R0 , #0
+			STR R0 , [R1]
+			
+			LDR R1, =SYSCTL_RCGCTIMER ; Start Timer1
+			LDR R2, [R1]
+			ORR R2, R2, #0x02
+			STR R2, [R1]
+			NOP ; allow clock to settle
+			NOP
+			NOP
+			LDR R1, =TIMER1_CTL ; disable timer during setup 
+			LDR R2, [R1]
+			BIC R2, R2, #0x01
+			STR R2, [R1]
+			LDR R1, =TIMER1_CFG ; set 16 bit mode
+			MOV R2, #0x04
+			STR R2, [R1]
+			LDR R1, =TIMER1_TAMR
+			MOV R2, #0x17 ; set to capture,edgetime,count up
+			STR R2, [R1]
+			LDR R1, =TIMER1_CTL ; disable timer during set
+			LDR R2, [R1]
+			ORR R2, R2, #0x0C;set both edges
+			STR R2, [R1]
+			LDR R1, =TIMER1_TAPR
+			MOV R2, #15 ; divide clock by 16 to
+			STR R2, [R1] ;count extending
+			LDR R1, =TIMER1_TAILR ; initialize match clocks
+			LDR R2, =0x00000000;initilize count from 0
+			STR R2, [R1]
+			
+			BL PULSE_INIT; first open the input signal
+			
+			LDR R1, =TIMER1_CTL
+			LDR R2, [R1]
+			ORR R2, R2, #0x03 ; set bit0 to enable
+			STR R2, [R1] ; and bit 1 to stall on debug		
+;polling the Interrupt flag for capture (CAERIS)
+;When there is a flag pass.
+;This is the first polling. Count until an edge comes
+			LDR R1,=TIMER1_RIS			
+waitoff		LDR R2,[R1]
+			ANDS R2,#0X04
+			BEQ waitoff
+;Clearing the Interrupt flag for further operations
+			LDR R1,=TIMER1_ICR
+			LDR R2,=0X00000004
+			STR R2,[R1]
+;When the pos-edge comes I save that value. I dont take 
+;this part as the time of low period, since we may 
+;lose some of the initial parts of the period
+;I used this part as a subraction operator for further calculations
+			LDR R1,=TIMER1_TAR
+			LDR R3,[R1];sub portiton
+			
+			LDR R1,=TIMER1_RIS			
+wait1		LDR R2,[R1]
+			ANDS R2,#0X04
+			BEQ wait1
+;This the time which includes the part from initilization of the
+;signal till the neg-edge of the first pulse
+;Since, before I calculated the part from initilization to pos-edge
+;I substract that part from total to calculate pulse width
+;(result is the time between pos-edge and neg-edge)
+			LDR R1,=TIMER1_TAR
+			LDR R7,[R1]
+			SUB R7,R7,R3;pulse width
+			MOV R1,#16;for actual period calculation
+					;the timer1 's clock is 16 Mhz 
+					;and timer0's is 1 MHz  due to prescale
+					;to match the clocks I divided by 16 the value
+			UDIV R7,R7,R1
+			
+			LDR R1,=TIMER1_ICR
+			LDR R2,=0X00000004
+			STR R2,[R1]	
+
+			LDR R1,=TIMER1_RIS			
+wait2		LDR R2,[R1]
+			ANDS R2,#0X04
+			BEQ wait2
+;This is the total time from beginning to 2 pos-edge
+;Again by subracting the initial part from this value
+;gives the time between 2 pos-edges which is 
+;actually the period of the pulse
+;dividing operation is same as above to match the clocks
+			LDR R1,=TIMER1_TAR
+			LDR R8,[R1]
+			SUB R8,R8,R3;period
+			MOV R1,#16;for actual period due to prescale
+			UDIV R8,R8,R1
+;Duty cycle Operation. Which is 100 times PulseWidth divided by period 
+			MOV R1,#100
+			MUL R7,R7,R1
+			UDIV R6,R7,R8;duty
+
+;To not being disturbed by interrupts  while printing the values 
+;I disabled the timers 
+			LDR R1, =TIMER0_CTL ; disable timer during setup 
+			LDR R2, [R1]
+			BIC R2, R2, #0x01
+			STR R2, [R1]
+			
+			LDR R1, =TIMER1_CTL ; disable timer during setup 
+			LDR R2, [R1]
+			BIC R2, R2, #0x01
+			STR R2, [R1]
+;In this part I used the CONVRT and OutStr Subroutines 
+;That we used before. Convrt is converting value to ASCII
+;equalivant digits for numbers and stores it to an adress
+;OutStr is printing the value on that adress to the terminal
+;printing duty			
+			MOV R4,R6;duty
+			LDR R3,=DUTY
+			LDR R5,=FIRST
+			BL CONVRT
+			BL OutStr
+;printing pulsewidth			
+			MOV R4,R7;pulse width
+			LDR R3,=PULSE_WIDTH
+			LDR R5,=FIRST
+			BL CONVRT
+			BL OutStr
+;printing period			
+			MOV R4,R8;period
+			LDR R3,=PERIOD
+			LDR R5,=FIRST
+			BL CONVRT
+			BL OutStr
+			
+			
+STOP		B STOP
+			
+			ALIGN
+			END	
