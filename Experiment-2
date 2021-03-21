@@ -1,0 +1,242 @@
+;Q1 MAIN
+;LABEL		DIRECTIVE	VALUE		COMMENT
+            AREA        sdata, DATA, READONLY
+            THUMB
+
+;***************************************************************
+; Program section					      
+;***************************************************************
+;LABEL		DIRECTIVE	VALUE		COMMENT
+			AREA    	main, READONLY, CODE
+			THUMB
+			EXTERN		DELAY100	; Reference external subroutine		
+			EXPORT  	__main; Make available
+			IMPORT		OutStr
+			IMPORT		OutChar
+			AREA 		main,READONLY,CODE,ALIGN=2
+			THUMB
+			EXPORT __main
+
+__main	
+start
+			PUSH	{R2}
+			MOV		R2,#10				; It will decide how many times we will call DELAY100 subroutine
+			
+loop		BL 		DELAY100;
+			SUBS	R2,R2,#1
+			BNE		loop
+			
+
+			MOV			R5,#49			; Evert finish program show us 1 on termite
+			BL			OutChar
+			POP			{R2}
+			B			start
+					
+;LABEL      DIRECTIVE       VALUE                           COMMENT
+			ALIGN
+			END
+
+NUM			EQU		0X00082355
+;LABEL		DIRECTIVE	VALUE		COMMENT
+            AREA        sdata, DATA, READONLY
+            THUMB
+
+;***************************************************************
+; Program section					      
+;***************************************************************
+;LABEL		DIRECTIVE	VALUE		COMMENT
+			AREA    	Delay, READONLY, CODE
+			THUMB
+			EXTERN		OutStr	; Reference external subroutine	
+			EXPORT  	DELAY100; Make available
+
+;This is the DELAY subroutine. Since we need to delay 100ms and our
+;default clock of the kit is 16 MHz, I calculated the needed clock cycles to wait.
+;The calculations is as follows: 16 MHz clock means there are 16 million clock cycles
+;are produced per second and for 100 ms there are needed 16M/10 cycles to wait. Since 
+;the loop for waiting is done in 3 clock cycles(branch operation is 2 cycle and sub 
+;opearion is 1 cycle) the total amount of counter is should be 16M/(10*3). In other
+;words, we need to decrease a constant which is equal to 5.333 million time until it 
+;is equal to 0. The constant is deifned at the top of the code as NUM.After that to 
+;see the the time delay on termite OutStr is called for this question.  
+DELAY100
+PROC	
+			PUSH	{R0}
+begin		LDR  	R0,=NUM
+
+	
+wait		SUBS	R0,#1			;3 clock cycle loop 
+			BNE		wait	
+
+			
+			POP		{R0}	
+			BX		LR	; return
+	
+;***************************************************************
+; End of the program  section
+;***************************************************************
+;LABEL      DIRECTIVE       VALUE                           COMMENT
+			ALIGN
+			END
+;Q2 MAIN PROGRAM
+;LABEL				DIRECTIVE	VALUE		COMMENT
+
+GPIO_PORTB_DATA    EQU         0x400053FC ; data addr e s s to a l l pins
+GPIO_PORTB_DIR     EQU         0x40005400
+GPIO_PORTB_AFSEL   EQU         0x40005420
+GPIO_PORTB_DEN     EQU         0x4000551C
+IOB                EQU         0xF0
+
+SYSCTL_RCGCGPIO    EQU  	   0x400FE608
+
+;LABEL		DIRECTIVE	VALUE		COMMENT
+            AREA        sdata, DATA, READONLY
+            THUMB
+
+;***************************************************************
+; Program section					      
+;***************************************************************
+;LABEL		DIRECTIVE	VALUE		COMMENT
+			AREA    	main, READONLY, CODE
+			THUMB
+			EXTERN		DELAY100	; Reference external subroutine		
+			EXPORT  	__main; Make available
+			AREA 		main,READONLY,CODE,ALIGN=2
+			THUMB
+			EXPORT		 __main
+;I used the defined values in pre for input/output parameters for B port, there are needed 4 inputs and 
+;4 ouputs total 8 pins for this question and modfied it a little bit. I set the IOB parameter which defines
+;the port pit as I/O such that the [B7:B4] as output and [B3:B0] as input. After setting other parameters as 
+;stated in pre2 manual I loaded to GPIO_PORTB_DATA adress the 0xF0 value which sets the inital values of output
+;and input pins. Output pins are initally 1 (when corresponding pin is 0 the led is on ) and input
+; (when pressed it sets the corresponding adress of pin as 0) pins are initially 1. The Code first check for whether there is a 
+;button is pushed or not and shifts left the adress value by four and stores it back to the adress. In this way, we turn on the led
+;on according to corresponding push button pressed. After setting output pins we wait for 5 seconds to let the led on for 5 seconds.
+__main	
+start
+					LDR R1,=SYSCTL_RCGCGPIO
+					LDR R0,[R1]
+					ORR R0,R0,#0x02
+					STR R0,[R1]
+					NOP
+					NOP
+					NOP 								;let GPIO clock sTabilize
+					
+
+					LDR R1,=GPIO_PORTB_DIR 				; configure of port B starts
+					LDR R0,[R1]
+					BIC R0,#0xFF
+					ORR R0,#IOB						;IOB = F0(1111 0000)  	; PB0,1,2,3 are inputs and PB4,5,6,7 are outputs
+					STR R0,[R1]
+					
+					
+					LDR R1,=GPIO_PORTB_AFSEL		; Port B pins will be used as GPIO
+					LDR R0,[R1]
+					BIC R0,#0xFF
+					STR R0,[R1]
+					
+					
+					LDR R1,=GPIO_PORTB_DEN
+					LDR R0,[R1 ]
+					ORR R0,#0xFF
+				    STR R0,[R1 ]			 ; configure of port B ends
+					
+					LDR R2,=0XF0
+					LDR R1,=GPIO_PORTB_DATA
+					STR R2,[R1]
+					
+LOOP			
+					LDR R2,[R1]
+					LSL R2,#4
+					STR R2,[R1]
+loopdelay			MOV	R0,#50					
+					BL  DELAY100
+					SUBS R0,R0,#1
+					BNE loopdelay
+					B   LOOP
+					
+;LABEL      DIRECTIVE       VALUE                           COMMENT
+			ALIGN
+			END
+;PRTBT SUBROUTINE PROGRAM
+GPIO_PORTB_DATA    EQU         0x400053FC
+
+;***************************************************************
+; Program section					      
+;***************************************************************
+;LABEL		DIRECTIVE	VALUE		COMMENT
+			AREA    	prtBUTTON, READONLY, CODE
+			THUMB
+			EXTERN		OutChar	; Reference external subroutine	
+			EXTERN		DELAY100; Reference external subroutine
+			EXPORT  	PRTBT; Make available
+
+;In this subroutine we check the columns according to 1 row setted to 0. It starts from the first 
+;column and checks whether it is pushed.If a button is pushed in the corresponding column it goes into
+;a loop called pressoff until the button is released. When it is released program prints that button number and
+;R5 is setted to 0 to make the maing program understands that there is a button pushed then branches to
+;end of the subroutine. If there is no button pushed program branches to next columns until the end. 
+;At the end, subroutine returns the main program.
+PRTBT
+PROC              		PUSH {LR}
+					
+					MOV R6,R0
+					STR R6,[R1]
+					BL DELAY100 ;used for letting the bits are setted 
+					LDR R7,[R1]
+					
+					CMP R7,R9 ;first column check
+					BNE first  ;If not pushed 
+					MOV R5,R10
+pressoff			LDR R3,[R1]
+					CMP R3,R0
+					BNE pressoff					
+					BL  OutChar
+				;	MOV R5,#0  ;letting the main program now there is button pushed
+					B   terminate
+					
+first				ADD R10,#1 ;second coulmn check
+					CMP R7,R8
+					BNE second
+					MOV R5,R10
+pressoff1			LDR R3,[R1]
+					CMP R3,R0
+					BNE pressoff1										
+					BL  OutChar
+					MOV R5,#0
+					B   terminate
+
+second				CMP R10,#0X39 ;third column check
+					ITE EQ
+					ADDEQ R10,#0X08
+					ADDNE R10,#1
+					CMP R7,R4
+					BNE third
+					MOV R5,R10
+pressoff2			LDR R3,[R1]
+					CMP R3,R0
+					BNE pressoff2					
+					BL  OutChar
+					MOV R5,#0
+					B   terminate
+					
+third				CMP R7,R2
+					ADD R10,#1 
+					BNE terminate
+					MOV R5,R10
+pressoff3			LDR R3,[R1]
+					CMP R3,R0
+					BNE pressoff2					
+					BL  OutChar	
+					MOV R5,#0
+	
+terminate     		
+					POP{LR}
+					
+			       	BX  LR	; return
+;***************************************************************
+; End of the program  section
+;***************************************************************
+;LABEL      DIRECTIVE       VALUE                           COMMENT
+					ALIGN
+					END
