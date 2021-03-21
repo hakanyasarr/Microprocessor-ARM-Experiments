@@ -1,0 +1,497 @@
+;LABEL				DIRECTIVE	VALUE		COMMENT
+
+GPIO_PORTB_DATA    EQU         0x400053FC ; data addr e s s to a l l pins
+GPIO_PORTB_DIR     EQU         0x40005400
+GPIO_PORTB_AFSEL   EQU         0x40005420
+GPIO_PORTB_DEN     EQU         0x4000551C
+IOB                EQU         0x0F
+
+SYSCTL_RCGCGPIO    EQU  	   0x400FE608
+
+
+
+
+				   AREA main,READONLY,CODE,ALIGN=2
+				   THUMB
+				   EXTERN InitSysTick
+				   EXPORT __main
+			
+__main 
+				   LDR R1,=SYSCTL_RCGCGPIO
+				   LDR R0,[R1]
+				   ORR R0,R0,#0x02;activate port B clock
+				   STR R0,[R1]
+				   NOP
+				   NOP
+				   NOP ; l e t GPIO c l o c k s t a b i l i z e
+				   
+				   LDR R1,=GPIO_PORTB_DIR ; c o n f i g . o f por t B s t a r t s
+				   LDR R0,[R1]
+				   BIC R0,#0xFF
+				   ORR R0,#IOB;set PB3-PB0 as output
+				   STR R0,[R1]
+				   LDR R1,=GPIO_PORTB_AFSEL
+				   LDR R0,[R1]
+				   BIC R0,#0xFF
+				   STR R0,[R1]
+				   LDR R1,=GPIO_PORTB_DEN
+				   LDR R0,[R1 ]
+				   ORR R0,#0x0F;activate PB3-PB0 digital operation
+				   STR R0,[R1] ; c o n f i g . o f por t B ends
+				   
+				   BL InitSysTick
+				   CPSIE I ; enable interrupt
+RESUME			   MOV R5,#4;counter to store back initial step value
+		;		   MOV R6,#0X08;input register to motor 
+				   MOV R6,#0X01				; This instruction for clockwise direction
+				   LDR R2,=GPIO_PORTB_DATA 
+STAY			   CMP R5,#0
+				   BNE STAY
+				   B RESUME
+				   
+				   ALIGN
+				   END
+           ; Your SystemTimer.s source file to implement
+;initialization and ISR
+; Definition of the labes  standing for
+; the address of the registers
+NVIC_ST_CTRL 	EQU 0xE000E010
+NVIC_ST_RELOAD 	EQU 0xE000E014
+NVIC_ST_CURRENT EQU 0xE000E018
+SHP_SYSPRI3 	EQU 0xE000ED20
+;end of the register label definitions
+;0x7D0 = 2000 ??> 2000*250 ns = 500us
+RELOAD_VALUE 	EQU 0x00000020
+;Initialization area
+;LABEL DIRECTIVE VALUE COMMENT
+				AREA init_isr , CODE, READONLY, ALIGN=2
+				THUMB
+				EXPORT InitSysTick
+InitSysTick 	PROC
+;first disable system timer and the related interrupt
+;then configure it to use internal oscillator PIOSC/4
+				PUSH{R0-R1}
+				LDR R1,=NVIC_ST_CTRL
+				MOV R0,#0
+				STR R0,[R1]
+;now set the time out period
+				LDR R1,=NVIC_ST_RELOAD
+				LDR R0,=RELOAD_VALUE
+				STR R0,[R1]
+;time out period is set
+;now set the current timer value to the time out value
+				LDR R1,=NVIC_ST_CURRENT
+				STR R0 ,[R1]
+; current timer = time out period
+; now set the priority level
+				LDR R1,=SHP_SYSPRI3
+				MOV R0,#0x40000000
+				STR R0,[R1]
+;priority is set to 2
+;now enable system timer and the related interrupt
+				LDR R1,=NVIC_ST_CTRL
+				MOV R0,#0x03
+				STR R0,[R1]
+				POP{R0-R1}
+;set up for system time is now complete
+				BX 	LR
+				ENDP
+        ;LABEL 		DIRECTIVE VALUE COMMENT
+			AREA MYSTISR , CODE, READONLY, ALIGN=2
+			EXPORT My_ST_ISR
+;This the ISR constructed when SysTick_handler pending 
+;we put the step input value for the motor in R6 and we str
+;it as input for motor when the interrupt occurs
+;After we store the input value, we shift R6 by 1 every time it
+;enter interrupt so that every time we store input as next step value
+;I set R5 as counter to understand that it is the last step value and 
+;restore the input to the first value
+;if R6 starts from 0x08 it first gives step 4 so it gives counter clockwise
+;rotation to motor by shifting right it (4->3->2->1->4...). If we store 
+;R6 as 0x01 and shift it left we give motor a clockwise rotation(1->2->3->4->1..).
+My_ST_ISR 	PROC
+			STR R6,[R2]
+		;	LSR R6,#1
+			LSL	R6,#1		;	it is for clockwise rotation
+			SUB R5,#1			
+			BX LR ;return
+			ENDP
+			;LABEL				DIRECTIVE	VALUE		COMMENT
+
+GPIO_PORTB_DATA    EQU         0x400053FC ; data address to all pins
+GPIO_PORTB_DIR     EQU         0x40005400
+GPIO_PORTB_AFSEL   EQU         0x40005420
+GPIO_PORTB_DEN     EQU         0x4000551C
+IOB                EQU         0x0F
+
+SYSCTL_RCGCGPIO    EQU  	   0x400FE608
+
+				   AREA main,READONLY,CODE,ALIGN=2
+				   THUMB
+				   EXTERN InitSysTick
+				   EXPORT __main
+			
+__main 
+start			   LDR R1,=SYSCTL_RCGCGPIO
+				   LDR R0,[R1]
+				   ORR R0,R0,#0x02
+				   STR R0,[R1]
+				   NOP
+				   NOP
+				   NOP ;let GPIO clock stabilize
+				   
+				   LDR R1,=GPIO_PORTB_DIR ;config  of port B starts
+				   LDR R0,[R1]
+				   BIC R0,#0xFF
+				   ORR R0,#IOB;set PB5-PB4 as input
+							  ;set PB3-PB0 as output
+				   STR R0,[R1]
+				   LDR R1,=GPIO_PORTB_AFSEL
+				   LDR R0,[R1]
+				   BIC R0,#0xFF
+				   STR R0,[R1]
+				   LDR R1,=GPIO_PORTB_DEN
+				   LDR R0,[R1 ]
+				   ORR R0,#0x3f;enable PB5-PB0
+				   STR R0,[R1] ; config . of port B ends
+				   
+				   MOV R7,#0;interrupt check register. When an interrupt occurs
+							;it is set 
+				   MOV R6,#4;counter for clock wise rotation
+				   MOV R5,#0X08;register for clockwise rotation;start with step 4
+				   MOV R4,#4;counter for clockwise rotation;start with step 1
+				   MOV R3,#0X01;register for counter clockwise rotation 
+				   BL InitSysTick
+				   CPSIE I ; enable interrupt
+				   				   
+				   LDR R2,=GPIO_PORTB_DATA 				   
+				   MOV R1,#0X30
+				   STR R1,[R2]
+;delay for allocate enough time for letting the input pins to be  set
+delay			   CMP R7,#1
+				   BNE delay
+				   MOV R7,#0
+				   
+;debounce for pressing moment				   
+begin			   LDR R1,[R2]
+debounce		   CMP R7,#1
+				   BNE debounce
+				   MOV R7,#0
+				   LDR R8,[R2]
+				   CMP R1,R8
+				   BNE begin	
+;check if there is a button pushed(button cntclk_wise or cclokwise rotation)				   
+				   AND R1,R1,#0X30
+				   CMP R1,#0X20
+				   BEQ cntclk_wise
+				   CMP R1,#0X10
+				   BEQ clk_wise
+				   B   begin
+;release check with debounce					   
+cntclk_wise	           LDR R1,[R2]
+delay1			   CMP R7,#1;check if there happened an interrupt
+				   BNE delay1
+				   LDR R8,[R2]
+				   CMP R8,R1
+				   BNE cntclk_wise
+				   MOV R7,#0
+				   AND R1,R1,#0X30
+				   CMP R1,#0x30
+				   BNE cntclk_wise
+;if the counter is 0, turn back to initial				   
+				   CMP R6,#0
+				   MOVEQ R5,#0X08;clock wise initial step value
+				   MOVEQ R6,#4
+				   STR R5,[R2]
+				   LSR R5,#1
+				   SUB R6,#1
+				   B   begin
+			   
+clk_wise	   LDR R1,[R2]
+delay2			   CMP r7,#1
+				   BNE delay2
+				   LDR R8,[R2]
+				   CMP R8,R1
+				   BNE clk_wise
+				   MOV R7,#0
+				   AND R1,R1,#0X30
+				   CMP R1,#0x30
+				   BNE clk_wise
+ 				   
+			   	   CMP R4,#0
+				   MOVEQ R3,#0X01;counter clock wise initial step value
+				   MOVEQ R4,#4
+				   STR   R3,[R2]
+				   LSL   R3,#1
+				   SUB   R4,#1
+				   B   begin				   
+
+				   ALIGN
+				   END	
+           
+NVIC_ST_CTRL 	EQU 0xE000E010
+NVIC_ST_RELOAD 	EQU 0xE000E014
+NVIC_ST_CURRENT EQU 0xE000E018
+SHP_SYSPRI3 	EQU 0xE000ED20
+;end of the register label definitions
+;0x7D0 = 2000 ??> 2000*250 ns = 500us
+RELOAD_VALUE 	EQU 0x00100000
+;Initialization area
+;LABEL DIRECTIVE VALUE COMMENT
+				AREA motorspeed , CODE, READONLY, ALIGN=2
+				THUMB
+				EXPORT motor_speed 
+motor_speed 	PROC
+;first disable system timer and the related interrupt
+;then configure it to use internal oscillator PIOSC/4
+				PUSH{R0,R1}
+				LDR R1,=NVIC_ST_CTRL
+				MOV R0,#0
+				STR R0,[R1]
+;now set the time out period
+;				LDR R1,=NVIC_ST_RELOAD
+;				LDR R0,=RELOAD_VALUE
+;				STR R0,[R1]
+;time out period is set
+;now set the current timer value to the time out value
+				LDR R1,=NVIC_ST_CURRENT
+				STR R0 ,[R1]
+; current timer = time out period
+; now set the priority level
+				LDR R1,=SHP_SYSPRI3
+				MOV R0,#0x40000000
+				STR R0,[R1]
+;priority is set to 2
+;now enable system timer and the related interrupt
+				LDR R1,=NVIC_ST_CTRL
+				MOV R0,#0x03
+				STR R0,[R1]
+				
+				LDR R1,=NVIC_ST_RELOAD
+				
+				CMP R10,#1
+				BEQ speed_down
+				CMP R11,#1
+				BEQ speed_up
+				
+				AND R4,R4,#0XC0
+				CMP R4,#0X80
+				BEQ speed_down
+				CMP R4,#0X40
+				BEQ speed_up
+				B   finish 
+				
+;waiting to relase when released speed is decremented				
+speed_down      MOV R10,#1
+				AND R4,R4,#0XF0
+				CMP R4,#0XF0
+				BNE finish
+				
+				
+			;	MOV R10,#2
+			;	MUL R9,R9,R10
+			
+				LSL	R9,#1
+				;ADD R9,#0X400;decrease the Reload value of Systick
+				
+				
+				STR R9,[R1]
+				MOV R10,#0
+				B   finish
+;waiting to relase when released speed is incremented					
+speed_up 		MOV R11,#1
+				AND R4,R4,#0XF0
+				CMP R4,#0XF0;check if released
+				BNE finish
+				
+				;MOV	R12,#0X800
+				;MOV R10,#2
+				;SUBS	R12,R9,R12
+			;	SUBMI R9,#0X100 ;DECREASE the systick Reload value
+				LSR R9,#1
+				CMP	R9,#0X8000
+				MOVEQ	R9,#0X10000
+				
+				STR R9,[R1]
+				MOV R11,#0
+				B   finish
+				
+finish			POP{R0,R1}
+
+				BX 	LR
+				ENDP
+				ALIGN
+				END	
+;LABEL				DIRECTIVE	VALUE		COMMENT
+
+GPIO_PORTB_DATA    EQU         0x400053FC ; data addr e s s to a l l pins
+GPIO_PORTB_DIR     EQU         0x40005400
+GPIO_PORTB_AFSEL   EQU         0x40005420
+GPIO_PORTB_DEN     EQU         0x4000551C
+IOB                EQU         0x0F
+
+SYSCTL_RCGCGPIO    EQU  	   0x400FE608
+
+				   AREA main,READONLY,CODE,ALIGN=2
+				   THUMB
+				   EXTERN InitSysTick
+				   EXTERN motor_speed
+				   EXPORT __main
+			
+__main 
+start			   LDR R1,=SYSCTL_RCGCGPIO
+				   LDR R0,[R1]
+				   ORR R0,R0,#0x02
+				   STR R0,[R1]
+				   NOP
+				   NOP
+				   NOP ; l e t GPIO c l o c k s t a b i l i z e
+				   
+				   LDR R1,=GPIO_PORTB_DIR ; c o n f i g . o f por t B s t a r t s
+				   LDR R0,[R1]
+				   BIC R0,#0xFF
+				   ORR R0,#IOB
+				   STR R0,[R1]
+				   LDR R1,=GPIO_PORTB_AFSEL
+				   LDR R0,[R1]
+				   BIC R0,#0xFF
+				   STR R0,[R1]
+				   LDR R1,=GPIO_PORTB_DEN
+				   LDR R0,[R1 ]
+				   ORR R0,#0xFF
+				   STR R0,[R1] ; c o n f i g . o f por t B ends
+				   
+				   MOV R3,#0; mark for there is an rotation dir change
+				   MOV R10,#0;mark for check whether a button pressed
+				   MOV R11,#0;mark check whether a button pressed
+				   MOV R7,#0;mark for interrupt check register
+				   LDR R9,=0X00010000;INITIAL RELOAD VALUE WHEN BUTTON PRESSED
+				   BL InitSysTick
+				   CPSIE I ; enable interrupt
+				   
+;PORT INITIALIZATION				   
+begin			   LDR R2,=GPIO_PORTB_DATA 				   
+				   MOV R1,#0XF0
+				   
+delay1			   CMP R7,#1;delay used for to wait before storing 
+				   BNE delay1
+				   MOV R7,#0
+				   
+				   STR R1,[R2]				   
+delay2			   CMP R7,#1
+				   BNE delay2
+				   MOV R7,#0
+;part looking for if there is an input. If there is go to related placeces to wait
+;until release
+				   LDR R1,[R2]
+				   AND R1,R1,#0X30
+				   CMP R1,#0X20
+				   BEQ clkwise_rel
+				   CMP R1,#0X10
+				   BEQ cntclk_rel
+				   B begin
+
+;********************CLOCKWISE PART********************				   
+clkwise_rel		   LDR R1,[R2];initial release when the button first pressed after reset
+				   AND R1,R1,#0X30
+				   CMP R1,#0x30
+				   BNE clkwise_rel
+				   
+clkwise			   MOV R5,#4;counter fore the shift operation
+				   MOV R6,#0X01;givinng the input to motor 
+noint1			   CMP R7,#1;waiting for interrupt when interrupt R7 is set to 1 in My_ST_ISR
+				   BNE noint1
+				   MOV R7,#0;return value r7 to 0 in order to further markings
+				   STR R6,[R2]
+				   LSL R6,#1
+				   SUB R5,#1
+				   CMP R5,#0
+				   BNE noint1
+;jump to rotate until state (release1) branch to dont check again if there is an input				  
+				   CMP R3,#1
+				   BEQ release1
+;check if there is a direction change button is pressed				   
+				   LDR R1,[R2]
+				   AND R1,R1,#0X30	   
+				   CMP R1,#0X10
+				   MOVEQ R3,#1;marking to know that there was a button pressed
+				   
+;*******************MOTOR SPEED PART*************************	
+				   LDR R4,[R2];debounce operation
+delay3			   CMP R7,#1 
+				   BNE delay3
+				   MOV R7,#0
+				   LDR R8,[R2]
+				   CMP R8,R4
+				   BNE clkwise
+				   
+speed1			   CPSID I
+				   BL motor_speed
+				   CPSIE I
+**************************************************************				   
+				   B clkwise
+;waiting for to release of the direction button. Continue to rotate motor 				   
+release1		   CMP R7,#1;equalises the press hold and default turn speeds 
+				   BNE release1
+				   MOV R7,#0
+				   LDR R1,[R2];afterwards release while motor is operating
+				   AND R1,R1,#0X30
+				   CMP R1,#0x30
+				   BNE clkwise
+				   
+				   MOV R3,#0;return the value of mark for further marking
+				   B cnt_clkwise
+				   
+;**************COUNTER CLCOKWISE PART*****************					   
+cntclk_rel 		   LDR R1,[R2];initial release
+				   AND R1,R1,#0X30
+				   CMP R1,#0x30
+				   BNE cntclk_rel				   
+			   
+cnt_clkwise		   MOV R5,#4
+				   MOV R6,#0X08 
+noint2			   CMP R7,#1
+				   BNE noint2
+				   MOV R7,#0
+				   STR R6,[R2]
+				   LSR R6,#1
+				   SUB R5,#1
+				   CMP R5,#0
+				   BNE noint2
+				   
+				   CMP R3,#1
+				   BEQ release2
+				   
+				   LDR R1,[R2]
+				   AND R1,R1,#0X30	   
+				   CMP R1,#0X20
+				   MOVEQ R3,#1
+				   
+;*******************MOTOR SPEED PART*************************	
+				   LDR R4,[R2];debounce
+delay4			   CMP R7,#1;delay used for to wait before storing 
+				   BNE delay4
+				   MOV R7,#0
+				   LDR R8,[R2]
+				   CMP R8,R4
+				   BNE cnt_clkwise;debounce end
+speed2			   CPSID I;speed control begin
+				   BL motor_speed
+				   CPSIE I
+;************************************************************				   
+				   B cnt_clkwise
+				   
+;waiting for to release of the direction button. Continue to rotate motor 				   
+release2		   CMP R7,#1;equalises the press hold and default turn speeds
+				   BNE release2
+				   MOV R7,#0
+				   LDR R1,[R2]
+				   AND R1,R1,#0X30
+				   CMP R1,#0x30
+				   BNE cnt_clkwise
+				   
+				   MOV R3,#0
+				   B  clkwise
+
+				   ALIGN
+				   END
